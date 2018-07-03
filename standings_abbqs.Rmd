@@ -1,0 +1,66 @@
+<!-- This scirpt gets the schedule from the softball league, transforms it how
+we want it and gives a nicely formatted HTML table -->
+
+```{r get and generate the table, include = FALSE}
+
+library(httr) # is used to get the HTML document
+library(xml2) # read out the HTML document
+library(rvest) # get individual nodes from the HTML document
+library(data.table) #great tool for data wrangling
+library(dplyr) #another great tool for data wrangling
+library(mgsub) #a speical gsub package to replace multiple strings at once
+library(kableExtra) #styling package for kable (to make our nicely formatted table)
+
+#we get the HTML file from the server
+abbqs <- GET("http://www.abbqs.at/abbqs-east-2018/")
+
+#we transform it into a more accessible fashion
+abbqs <- read_html(abbqs)
+
+#we get the HTML nodes that are named table and select the first table. this
+#is where the standings are
+standings <- html_nodes(abbqs, "table")[1]
+
+#we use html_table to transform it into a more table like object
+standings <- html_table(standings)
+
+#rbindlist comes with the data.table package. it transforms our list object into a
+#data.table (note: a data.table is always also a data.frame)
+standings <- rbindlist(standings)
+
+#I don't care about the position, that's why I delete the column here
+standings[, Pos. := NULL]
+
+#With the dplyr package I use mutate to calculate a games column (the amount of
+#games played) and then select the columns I want in the order I want
+standings <- mutate(standings, G = W + L) %>%
+  select(Team = Mannschaft, G, W, L, Pct, RS, RA, Diff)
+
+#I make sure that the Pct column always has three digits after the decimal point
+standings[,'Pct']=format(round(standings[,'Pct'],3),nsmall=3)
+
+#I want the line with my team to be bold and blue. This is why I save the line
+#where my team is in a variable
+blue_rows <- which(standings$Team %like% "Rohrbach")
+
+#We produce our final nicely formatted (HTML) table. I want the first column to be 
+#aligned left and all the other ones centered. This is what happens in the align argument
+#of the kable function. After that I ensure that the table is responsive and with the
+#row_spec function I color in the line where my team is at and make it bold
+standings_format <- kable(standings, align = c("l", rep("c", 8))) %>%
+  kable_styling(bootstrap_options = c("striped")) %>%
+  row_spec(blue_rows, bold = TRUE, color = "#01023C") 
+
+```
+
+<!-- Now to the part that where we actually show the HTML output. I just want a simple line
+that says Regular Season and show the table after it. -->
+
+**Regular Season**
+
+```{r show the table , echo = FALSE}
+standings_format
+```
+
+<!-- All done. Now we can call this RMD file from the post_to_wordpress.R file with the 
+knit2wp function and this part of the website will magically be updated -->

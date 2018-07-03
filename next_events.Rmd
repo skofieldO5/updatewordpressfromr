@@ -1,0 +1,174 @@
+<!-- The idea of this script is to update the NEXT EVENTS section on 
+crazy-geese.at. So we actually need the schedule of both leagues 
+The softball league is called ABBQS and the baseball league is called
+RLO -->
+
+```{r get and generate the tables, include = FALSE}
+
+library(httr) # is used to get the HTML document
+library(xml2) # read out the HTML document
+library(rvest) # get individual nodes from the HTML document
+library(data.table) #great tool for data wrangling
+library(dplyr) #another great tool for data wrangling
+library(mgsub) #a speical gsub package to replace multiple strings at once
+library(kableExtra) #styling package for kable (to make our nicely formatted table)
+
+#we get the HTML file from the server
+abbqs <- GET("http://www.abbqs.at/abbqs-east-2018/")
+
+#we transform it into a more accessible fashion
+abbqs <- read_html(abbqs)
+
+#we get the HTML nodes that are named table and select the second table. this
+#is where the schedule is
+abbqs_schedule <- html_nodes(abbqs, "table")[2]
+
+#we use html_table to transform it into a more table like object
+abbqs_schedule <- html_table(abbqs_schedule)
+
+#rbindlist comes with the data.table package. it transforms our list object into a
+#data.table (note: a data.table is always also a data.frame)
+abbqs_schedule <- rbindlist(abbqs_schedule)
+
+#since I play baseball and softball in Austria and I ran into some trouble with
+#german Umlaute, I rename the column names here
+setnames(abbqs_schedule, c("Datum", "Heim", "Zeit/Ergebnisse", "Auswaerts", "Austragungsort"))
+
+#my team is the Crazy geese. So I select all lines with our team in it
+abbqs_schedule <- abbqs_schedule[Heim == "Crazy Geese Rohrbach" | Auswaerts == "Crazy Geese Rohrbach"]
+
+#i transfer the date column into a date format. (note: you will get a warning message
+#that the type was changed to POSIXct. This is fine and actually what we want)
+abbqs_schedule[, Date := strptime(Datum, format = '%Y-%m-%d %H:%M:%S')]
+
+#i want two columns. one with the day of the game and one with the starting time
+#here I can read out just the day with the format function and store it in a new
+#column named "Datum" (german for Date)
+abbqs_schedule$Datum <- format(abbqs_schedule$Date, "%d.%m.%Y")
+
+#i do the same thing as with the day here with the starting time. 
+abbqs_schedule[, Beginn := strptime(Date, format = '%Y-%m-%d %H:%M:%S')]
+abbqs_schedule$Beginn <- format(abbqs_schedule$Beginn, "%H:%M")
+
+#with select from the dplyr package I select and rename the columns in the
+#way I want them to be
+abbqs_schedule <- as.data.table(abbqs_schedule %>%
+  select(Datum, Beginn, Gast = Auswaerts, Heim, Austragungsort, Ergebnis_Zeit = `Zeit/Ergebnisse`))
+#(Note: I'm not sure about this but I think that select() transfers the data.table into something else
+#even though class() still gives me data.table back, just to be sure I wrap the whole comannd into 
+#an as.data.table())
+
+#this looks more complicated than it is. mgsub() enables us to replace more than one character string
+#at once. so we feed it two vectors. the first one contains what we want to replace and the second one
+#with what we want to replace it. It goes in order so for example "Ducksfield Wr.Neustadt" gets 
+#replaced with "Wr. Neustadt". Finally we use lapply() to perform this on the whole data.table
+abbqs_schedule <- as.data.table(lapply(abbqs_schedule, function(x) {
+  mgsub(x, c("Ducksfield Wr.Neustadt", "Baseballfeld Rohrbach", "Cubsfield Stockerau",
+             "ASKÖ Baseballplatz Wien", "Baseballplatz Freudenau"), c("Wr. Neustadt", "Rohrbach", "Stockerau",
+                                                                      "Spenadlwiese - Wien", "Freudenau - Wien"))
+}))
+
+#just to make it not too much code at once I here replace the team names and above we were replacing
+#the baseball fields
+abbqs_schedule <- as.data.table(lapply(abbqs_schedule, function(x) {
+  mgsub(x, c("Crazy Geese Rohrbach", "Rubberducks Wiener Neustadt", "Wet Sox-Wanderers Wien"), 
+        c("Geese Rohrbach", "Rubberducks Wr.N.", "Wet Sox Wien"))
+}))
+
+#now I use &like% from data.table to get the first game that wasn't played by now, so therfore
+#the next game to be played. I save this as a new data.table contatining only one line
+next_abbqs <- abbqs_schedule[Ergebnis_Zeit %like% ":"][1]
+
+#the next part of the code is basically the same. We get the schedule for the RLO and filter
+#out the next game for the RLO
+rlo <- GET("http://baseballaustria.com/regionalliga-ost/")
+
+rlo <- read_html(rlo)
+
+rlo_schedule <- html_nodes(rlo, "table")[2]
+
+rlo_schedule <- html_table(rlo_schedule)
+
+rlo_schedule <- rbindlist(rlo_schedule)
+
+rlo_schedule <- rlo_schedule[Home == "Rohrbach Crazy Geese" | Away == "Rohrbach Crazy Geese"]
+
+rlo_schedule[, Datum := strptime(Date, format = '%Y-%m-%d %H:%M:%S')]
+rlo_schedule$Datum <- format(rlo_schedule$Datum, "%d.%m.%Y")
+
+rlo_schedule[, Beginn := strptime(Date, format = '%Y-%m-%d %H:%M:%S')]
+rlo_schedule$Beginn <- format(rlo_schedule$Beginn, "%H:%M")
+
+rlo_schedule[Field %like% "Rohrbach", Field := "Rohrbach"]
+rlo_schedule[Field %like% "Schwechat", Field := "Rannersdorf"]
+rlo_schedule[Field %like% "Spenadlwiese", Field := "Spenadlwiese - Wien"]
+rlo_schedule[Field %like% "Schrems", Field := "Schrems"]
+
+rlo_schedule <- as.data.table(lapply(rlo_schedule, function(x) {
+  mgsub(x, c("Rohrbach Crazy Geese", "Schwechat Blue Bats"), c("Crazy Geese", "Blue Bats"))
+}))
+
+ergebnisse <- grep(" - ", rlo_schedule$`Time/Results`)
+
+rlo_schedule[ergebnisse, Ergebnis := `Time/Results`]
+rlo_schedule[!ergebnisse, Ergebnis := " - "]
+
+rlo_schedule <- select(rlo_schedule, Datum, Beginn, Gast = Away, Heim = Home, Spielort = Field, Ergebnis)
+
+next_rlo <- rlo_schedule[Ergebnis == " - "][1]
+
+
+#in the Next Event section I want to show the next ABBQS and the next RLO game in order. But of course
+#it isn't clear if the next game is an ABBQS or an RLO game. That's why I use an if statement to determine
+#which one is the first game I want to show and which one is the second one. I just reverse the condition
+#for the second game.
+#Additionally I want to state if it is a home ("Heim") or away ("Auswärts") game. That's why I have 
+#another if statement inisde of the paste statement which determines exactly this. 
+
+
+
+game1 <- if (next_rlo$Datum < next_abbqs$Datum) {
+  paste(next_rlo$Datum, next_rlo$Beginn, "RLO:", next_rlo$Gast, "@", next_rlo$Heim, 
+        if (next_rlo$Spielort == "Rohrbach") {
+          "(Heim)"}
+        else {
+          "(Auswaerts)"
+        }
+          , sep = " ")
+} else {paste(next_abbqs$Datum, next_abbqs$Beginn, "ABBQS:", next_abbqs$Gast, "@", next_abbqs$Heim, 
+        if (next_abbqs$Austragungsort == "Rohrbach") {
+          "(Heim)"}
+        else {
+          "(Auswärts)"
+        }
+          , sep = " ")
+            
+          }
+
+
+game2 <- if (next_rlo$Datum > next_abbqs$Datum) {
+  paste(next_rlo$Datum, next_rlo$Beginn, "RLO:", next_rlo$Gast, "@", next_rlo$Heim, 
+        if (next_rlo$Spielort == "Rohrbach") {
+          "(Heim)"}
+        else {
+          "(Auswaerts)"
+        }
+          , sep = " ")
+} else {paste(next_abbqs$Datum, next_abbqs$Beginn, "ABBQS:", next_abbqs$Gast, "@", next_abbqs$Heim, 
+        if (next_abbqs$Austragungsort == "Rohrbach") {
+          "(Heim)"}
+        else {
+          "(Auswaerts)"
+        }
+          , sep = " ")
+            
+          }
+
+
+
+```
+```{r showing the two games , echo = FALSE, results='asis'}
+cat(game1) #it prints out the first game variable
+cat("  \n") #pagebreak
+cat(game2) #pirnts out the second game
+```
