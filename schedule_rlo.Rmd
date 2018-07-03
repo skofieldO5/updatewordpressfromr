@@ -1,0 +1,112 @@
+<!-- This scirpt gets the schedule from the baseball league, transforms it how
+we want it and gives a nicely formatted HTML table -->
+
+```{r get and generate the table, include = FALSE}
+#in this chunk we generate the table. we set include = FALSE so that this whole
+#chunk doesn't show in the output
+
+#we load all necessary packages if you haven't them installed on your system,
+#use install.packages("<packagename>") before these lines
+
+library(httr) # is used to get the HTML document
+library(xml2) # read out the HTML document
+library(rvest) # get individual nodes from the HTML document
+library(data.table) #great tool for data wrangling
+library(dplyr) #another great tool for data wrangling
+library(mgsub) #a speical gsub package to replace multiple strings at once
+library(kableExtra) #styling package for kable (to make our nicely formatted table)
+
+
+
+#we get the HTML file from the server
+rlo <- GET("http://baseballaustria.com/regionalliga-ost/")
+
+#we transform it into a more accessible fashion
+rlo <- read_html(rlo)
+
+#we get the HTML nodes that are named table and select the second table. this
+#is where the schedule is
+schedule <- html_nodes(rlo, "table")[2]
+
+#we use html_table to transform it into a more table like object
+schedule <- html_table(schedule)
+
+#rbindlist comes with the data.table package. it transforms our list object into a
+#data.table (note: a data.table is always also a data.frame)
+schedule <- rbindlist(schedule)
+
+#my team is the Crazy Geese. So I select all lines with our team in it
+schedule <- schedule[Home == "Rohrbach Crazy Geese" | Away == "Rohrbach Crazy Geese"]
+
+#i transfer the date column into a date format. (note: you will get a warning message
+#that the type was changed to POSIXct. This is fine and actually what we want)
+schedule[, Datum := strptime(Date, format = '%Y-%m-%d %H:%M:%S')]
+
+#i want two columns. one with the day of the game and one with the starting time
+#here I can read out just the day with the format function and store it in a new
+#column named "Datum" (german for Date)
+schedule$Datum <- format(schedule$Datum, "%d.%m.%Y")
+
+#i do the same thing as with the day here with the starting time. 
+schedule[, Beginn := strptime(Date, format = '%Y-%m-%d %H:%M:%S')]
+schedule$Beginn <- format(schedule$Beginn, "%H:%M")
+
+#the names of the baseball fields are too long for my table. So here I replace 
+#them with shorter versions
+schedule[Field %like% "Rohrbach", Field := "Rohrbach"]
+schedule[Field %like% "Schwechat", Field := "Rannersdorf"]
+schedule[Field %like% "Spenadlwiese", Field := "Spenadlwiese - Wien"]
+schedule[Field %like% "Schrems", Field := "Schrems"]
+
+#this looks more complicated than it is. mgsub() enables us to replace more than one character string
+#at once. so we feed it two vectors. the first one contains what we want to replace and the second one
+#with what we want to replace it. It goes in order so for example "Rohrbach Crazy Geese" gets 
+#replaced with "Crazy Geese". Finally we use lapply() to perform this on the whole data.table
+schedule <- as.data.table(lapply(schedule, function(x) {
+                  mgsub(x, c("Rohrbach Crazy Geese", "Schwechat Blue Bats"), c("Crazy Geese", "Blue Bats"))
+              }))
+
+#in the "Ergebnis_zeit" column there is either the result of the game or, if the games wasn't
+#played yet, the time of the game. I don't want this. I want one column for the date, one for
+#the time of the game and one with the result. This is why here I store the line numbers of
+#where there is a result in a vector
+ergebnisse <- grepl(" - ", schedule$`Time/Results`)
+#now I use this vector to fill in the result in the new column "Ergebnis". All the others
+#get a " - " because there is no result for future games of course
+schedule[ergebnisse, Ergebnis := `Time/Results`]
+schedule[!ergebnisse, Ergebnis := " - "]
+
+#with select from the dplyr package I select and rename the columns in the
+#way I want them to be
+schedule <- as.data.table(select(schedule, Datum, Beginn, Gast = Away, Heim = Home, Spielort = Field, Ergebnis))
+#(Note: I'm not sure about this but I think that select() transfers the data.table into something else
+#even though class() still gives me data.table back, just to be sure I wrap the whole comannd into 
+#an as.data.table())
+
+#in the final table I want every game which is played at our home field to be in blue
+#therefore I save the lines where this is the case in a variable
+blue_rows <- which(schedule$Spielort %in% "Rohrbach")
+
+#we produce our final nicely formatted (HTML) table. I want all the columns to be centered.
+#This is what happens in the align argument of the kable function. After that I ensure
+#that the table is responsive and with the row_spec function I color in all games that are
+#player on our home field
+schedule_format <- kable(schedule, align = c("c","c", "c","c","c", "c")) %>%
+  kable_styling(bootstrap_options = c("responsive")) %>%
+  row_spec(blue_rows, color = "#01023C")
+
+```
+
+<!-- Now to the part that we actually show the HTML output. I just want a simple line
+that says Regular Season and show the table after it. -->
+
+**Regular Season**
+
+```{r Tabelle anzeigen , echo = FALSE}
+schedule_format
+```
+
+**Heimspiele sind blau markiert**
+
+<!-- All done. Now we can call this RMD file from the post_to_wordpress.R file with the 
+knit2wp function and this part of the website will magically be updated -->
