@@ -18,6 +18,9 @@ standings_abbqs.Rmd It gets the softball schedule and formats it.
 
 standings_rlo.Rmd It gets the baseball schedule and formats it. 
 
+standings_rlo_sidebar.Rmd Basically the same thing as standings_rlo.Rmd but it's a smaller version
+for the sidebar of the homepage. 
+
 post_to_wordpress.R The shortest one but the heart of it. It calls the single RMD files, takes their
 output and uploads it to the wordpress website of my baseball club.
 
