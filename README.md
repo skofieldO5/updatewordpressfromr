@@ -1,4 +1,4 @@
-I wrote this couple of scripts to automatically update my baseball clubs homepage www.crazy-geese.at
+I wrote these couple of scripts to automatically update my baseball clubs homepage www.crazy-geese.at
 using R and R Markdown
 
 It basically gets the standings and schedules from baseballaustria.com and from abbqs.at, it processes
