@@ -57,7 +57,7 @@ schedule$Beginn <- format(schedule$Beginn, "%H:%M")
 #with select from the dplyr package I select and rename the columns in the
 #way I want them to be
 schedule <- as.data.table(schedule %>%
-  select(Datum, Beginn, Gast = Auswaerts, Heim, Austragungsort, Ergebnis_Zeit = `Zeit/Ergebnisse`))
+  select(Datum, Beginn, Heim, Gast = Auswaerts, Austragungsort, Ergebnis_Zeit = `Zeit/Ergebnisse`))
 #(Note: I'm not sure about this but I think that select() transfers the data.table into something else
 #even though class() still gives me data.table back, just to be sure I wrap the whole comannd into 
 #an as.data.table())
@@ -73,7 +73,7 @@ schedule[ergebnisse, Ergebnis := Ergebnis_Zeit]
 schedule[!ergebnisse, Ergebnis := " - "]
 
 #now I create the final table. again with select
-schedule <- as.data.table(select(schedule, Datum, Beginn, Gast, Heim, Spielort = Austragungsort, Ergebnis))
+schedule <- as.data.table(select(schedule, Datum, Beginn, Heim, Gast, Spielort = Austragungsort, Ergebnis))
 
 
 #this looks more complicated than it is. mgsub() enables us to replace more than one character string
